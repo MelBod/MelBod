@@ -433,13 +433,14 @@ AS (
                ) -- exclude deleted records where status is completed
      )
 
-SELECT DISTINCT 
-	skVisitDateKey
+SELECT DISTINCT skVisitDateKey
      ,VisitId
      ,skScheduleDateKey
      ,LastUpdateDate
      ,ScheduledVisitId
-     ,episodeId
+     ,
+     --AdmissionId,
+     episodeId
      ,PatientName
 	 ,MRN
      ,bpKey
@@ -481,7 +482,9 @@ SELECT DISTINCT
      ,skOrgKey
      ,[Location]
      ,EpiSlId AS ServiceLineId
-     ,HIPPS
+     ,
+     --HCPCS,
+     HIPPS
      ,LupaThreshold
      ,ClinicalGrouping
      ,Timing

@@ -28,7 +28,7 @@ inner join INFORMATION_SCHEMA.COLUMNS d on d.TABLE_NAME=t.name
 
 AND D.COLUMN_NAME=C.NAME
 
-where c.name like '%servicecode%' and table_schema = 'dbo' 
+where c.name like '%non-visit%' --and table_schema = 'dbo' 
 
 order by  t.name, C.name
 

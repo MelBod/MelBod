@@ -1,0 +1,62 @@
+Ghost Level Measure = DATATABLE("GhostGroup",STRING, {
+{"Open Ghost BP Visits is Today"},
+{"Open Ghost BP Visits 1 to 5 Days"},
+{"Open Ghost BP Visits 6 to 10 Days"},
+{"Open Ghost BP Visits 11 to 15 Days"},
+{"Open Ghost BP Visits 16 to 20 Days"},
+{"Open Ghost BP Visits 21 to 25 Days"},
+{"Open Ghost BP Visits 26 to 30 Days"}})
+
+
+
+Visits Needed (0–7 Days) = 
+SUMX(
+    FILTER(
+        dimBillingPeriod_HH,
+        dimBillingPeriod_HH[IsLupaBP_Open] = 1 &&
+        DATEDIFF(TODAY() - 1, dimBillingPeriod_HH[Billing Period End Date], DAY) >= 0 &&
+        DATEDIFF(TODAY() - 1, dimBillingPeriod_HH[Billing Period End Date], DAY) <= 7
+    ),
+    MAX(0, dimBillingPeriod_HH[Lupa Threshold] - dimBillingPeriod_HH[TotalOpen])
+)
+
+
+Open LUPA BP Visits 1 to 5 Days = 
+CALCULATE(
+    DISTINCTCOUNT(dimBillingPeriod_HH[bpKey]),
+    FILTER(
+        dimBillingPeriod_HH,
+        dimBillingPeriod_HH[IsLupaBP_Open] = 1
+            && DATEDIFF(TODAY() - 1, dimBillingPeriod_HH[Billing Period End Date], DAY) <= 5
+            && DATEDIFF(TODAY() - 1, dimBillingPeriod_HH[Billing Period End Date], DAY) >= 1
+    ),
+    MAX(0, dimBillingPeriod_HH[Lupa Threshold] - dimBillingPeriod_HH[TotalOpen])
+)
+
+Open Ghost BP Visits 11 to 15 Days = 
+CALCULATE(
+    DISTINCTCOUNT(dimBillingPeriod_HH[bpKey]),
+    FILTER(
+        dimBillingPeriod_HH,
+        dimBillingPeriod_HH[Open_BP0VisitCount] = 1
+            && DATEDIFF(TODAY() - 1, dimBillingPeriod_HH[Billing Period End Date], DAY) <= 15
+            && DATEDIFF(TODAY() - 1, dimBillingPeriod_HH[Billing Period End Date], DAY) >= 11
+    )
+)
+
+
+
+GhostPeriodBucket = 
+SWITCH(
+    TRUE(),
+    dimBillingPeriod_HH[Days to React] = 0, "Today",
+    dimBillingPeriod_HH[Days to React] >=1 && dimBillingPeriod_HH[Days to React] <= 7, "1 - 7 Days",
+    dimBillingPeriod_HH[Days to React] >=8 && dimBillingPeriod_HH[Days to React] <= 14, "8 - 14 Days",
+    dimBillingPeriod_HH[Days to React] >= 15 && dimBillingPeriod_HH[Days to React] <= 21, "15 - 21 Days",
+    dimBillingPeriod_HH[Days to React] >= 22 && dimBillingPeriod_HH[Days to React] <=30, "22 - 30 Days")
+
+
+Ghost Periods (DTR) = CALCULATE(SUM(dimBillingPeriod_HH[Open_BP0VisitCount]),
+FILTER(dimBillingPeriod_HH,
+[Days to React Measure] <= 30))
+

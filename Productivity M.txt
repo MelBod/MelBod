@@ -1,0 +1,141 @@
+let
+    Source = PowerPlatform.Dataflows(null),
+    Workspaces = Source{[Id = "Workspaces"]}[Data],
+    WS = Workspaces{[workspaceId = #"WorkspaceId"]}[Data],
+    DF = WS{[dataflowId = #"DataflowId"]}[Data],
+
+    dimWorker_ = DF{[entity = "dimWorker", version = ""]}[Data],
+
+    // Filter records
+    Filtered = 
+        Table.SelectRows(dimWorker_, each ([CurrentEmployeeFlag] = "Y") and ([CurrentRecordFlag] = "Y") and ([SourceSystem] = "Abode")),
+    // Replace F/P/R with text labels
+    FullPartTimeLabels = Table.ReplaceValue(
+            Filtered,
+            each [FullPartTime],
+            each 
+                if [FullPartTime] = "F" then "Full Time"
+                else if [FullPartTime] = "P" then "Part Time"
+                else if [FullPartTime] = "R" then "PRN"
+                else [FullPartTime],
+            Replacer.ReplaceValue,
+            {"FullPartTime"}
+        ),
+    #"Added Conditional Column" = Table.AddColumn(FullPartTimeLabels, "Certification", each if [JobDescriptionCode] = "AIDE" then "ParaProfessional" else if [JobDescriptionCode] = "LPN" then "ParaProfessional" else if [JobDescriptionCode] = "PTA" then "ParaProfessional" else if [JobDescriptionCode] = "COTA" then "ParaProfessional" else "Professional"),
+    // Goals: F = 30, P = 15, R = 15
+    AddedGoals = 
+        Table.AddColumn(#"Added Conditional Column", "Goals", each if [FullPartTime] = "Full Time" and [Certification] = "ParaProfessional" then 32 
+            else if [FullPartTime] = "Part Time"  and [Certification] = "ParaProfessional"  then 16 
+ 			else if [FullPartTime] = "Full Time"  and [Certification] = "Professional"  then 30 
+ 			else if [FullPartTime] = "Part Time"  and [Certification] = "Professional"  then 15 
+            else if [FullPartTime] = "PRN" then 0 
+                 else null)
+in
+    AddedGoals
+
+
+let
+    // Load the Power Platform Dataflow
+    Source = PowerPlatform.Dataflows(null),
+    Workspaces = Source{[Id = "Workspaces"]}[Data],
+    WS = Workspaces{[workspaceId = #"WorkspaceId"]}[Data],
+    DF = WS{[dataflowId = #"DataflowId"]}[Data],
+
+    // Load the Service Codes entity
+    HCHBServiceCodes = DF{[entity = "ServiceCodes", version = ""]}[Data],
+    #"Filtered Rows" = Table.SelectRows(HCHBServiceCodes, each ([SourceSystem] = "Abode")),
+    #"Extract Digits" = Table.AddColumn(#"Filtered Rows", "Visit Code", each Text.Select([ScCode], {"0".."9"}))
+in
+    #"Extract Digits"
+
+
+let
+    // --- Parameters ---
+    Today = Date.From(DateTimeZone.FixedUtcNow()),
+
+    // Start date = 13 months before today, forced to 1st of that month
+    StartDate = Date.StartOfMonth(Date.AddMonths(Today, -13)),
+
+    // End date = end of next month (1 month forward)
+    EndDate = Date.EndOfMonth(Date.AddMonths(Today, 1)),
+
+    // Week starts on Sunday
+    WeekStart = Day.Sunday,
+
+    // Optional holiday list (if you don’t have one, set Holidays = null)
+    HolidaysProvided = (try Holidays <> null otherwise false),
+
+    // Build base date list
+    DayCount = Duration.Days(EndDate - StartDate) + 1,
+    Source = List.Dates(StartDate, DayCount, #duration(1,0,0,0)),
+    ToTable = Table.FromList(Source, Splitter.SplitByNothing(), {"Date"}, null),
+
+    /* === YEAR COLUMNS === */
+    AddYearCols = Table.TransformColumns(
+        Table.AddColumn(ToTable, "Year", each Date.Year([Date]), Int64.Type),
+        {}
+    ),
+    AddYearOffset = Table.AddColumn(AddYearCols, "CurrYearOffset", each Date.Year([Date]) - Date.Year(Today), Int64.Type),
+    AddYearCompleted = Table.AddColumn(AddYearOffset, "YearCompleted", each Date.EndOfYear([Date]) < Date.EndOfYear(Today), type logical),
+
+    /* === QUARTER COLUMNS === */
+    AddQuarterNum = Table.AddColumn(AddYearCompleted, "Quarter Number", each Date.QuarterOfYear([Date]), Int64.Type),
+    AddQuarterText = Table.AddColumn(AddQuarterNum, "Quarter", each "Q" & Number.ToText([Quarter Number]), type text),
+    AddQuarterStart = Table.AddColumn(AddQuarterText, "Start of Quarter", each Date.StartOfQuarter([Date]), type date),
+    AddQuarterEnd = Table.AddColumn(AddQuarterStart, "End of Quarter", each Date.EndOfQuarter([Date]), type date),
+    AddQuarterYearText = Table.AddColumn(AddQuarterEnd, "Quarter & Year", each [Quarter] & " " & Number.ToText([Year]), type text),
+    AddQuarterNY = Table.AddColumn(AddQuarterYearText, "QuarternYear", each [Year] * 10 + [Quarter Number], Int64.Type),
+    AddQtrOffset = Table.AddColumn(AddQuarterNY, "CurrQuarterOffset",
+                    each ((4 * Date.Year([Date])) + [Quarter Number]) -
+                         ((4 * Date.Year(Today)) + Date.QuarterOfYear(Today)), Int64.Type),
+    AddQtrCompleted = Table.AddColumn(AddQtrOffset, "QuarterCompleted", each [End of Quarter] < Date.EndOfQuarter(Today), type logical),
+
+    /* === MONTH COLUMNS === */
+    AddMonthNum = Table.AddColumn(AddQtrCompleted, "Month", each Date.Month([Date]), Int64.Type),
+    AddMonthStart = Table.AddColumn(AddMonthNum, "Start of Month", each Date.StartOfMonth([Date]), type date),
+    AddMonthEnd = Table.AddColumn(AddMonthStart, "End of Month", each Date.EndOfMonth([Date]), type date),
+    AddMonthYearText = Table.AddColumn(AddMonthEnd, "Month & Year", each Date.ToText([Date], "MMM yyyy"), type text),
+    AddMonthNY = Table.AddColumn(AddMonthYearText, "MonthnYear", each [Year] * 100 + [Month], Int64.Type),
+    AddMonthOffset = Table.AddColumn(AddMonthNY, "CurrMonthOffset",
+                    each ((12 * Date.Year([Date])) + [Month]) -
+                         ((12 * Date.Year(Today)) + Date.Month(Today)), Int64.Type),
+    AddMonthCompleted = Table.AddColumn(AddMonthOffset, "MonthCompleted", each [End of Month] < Date.EndOfMonth(Today), type logical),
+    AddMonthName = Table.AddColumn(AddMonthCompleted, "Month Name", each Date.ToText([Date], "MMMM"), type text),
+    AddMonthShort = Table.AddColumn(AddMonthName, "Month Short", each Date.ToText([Date], "MMM"), type text),
+    AddMonthInitial = Table.AddColumn(AddMonthShort, "Month Initial", each Text.Start([Month Name], 1), type text),
+    AddDayOfMonth = Table.AddColumn(AddMonthInitial, "Day of Month", each Date.Day([Date]), Int64.Type),
+
+    /* === WEEK COLUMNS === */
+    AddISOWeekNum = Table.AddColumn(AddDayOfMonth, "Week Number", each Date.WeekOfYear([Date], WeekStart), Int64.Type),
+    AddWeekStart = Table.AddColumn(AddISOWeekNum, "Start of Week", each Date.StartOfWeek([Date], Day.Sunday), type date),
+    AddWeekEnd = Table.AddColumn(AddWeekStart, "End of Week", each Date.EndOfWeek([Date], WeekStart), type date),
+    AddWeekYearText = Table.AddColumn(AddWeekEnd, "Week & Year", each "W" & Number.ToText([Week Number]) & " " & Number.ToText([Year]), type text),
+    AddWeekNY = Table.AddColumn(AddWeekYearText, "WeeknYear", each [Year] * 100 + [Week Number], Int64.Type),
+    AddWeekOffset = Table.AddColumn(AddWeekNY, "CurrWeekOffset",
+                    each (Number.From([Start of Week]) - Number.From(Date.StartOfWeek(Today, WeekStart))) / 7, Int64.Type),
+    AddWeekCompleted = Table.AddColumn(AddWeekOffset, "WeekCompleted", each [End of Week] < Date.EndOfWeek(Today, WeekStart), type logical),
+
+    /* === DAY COLUMNS === */
+    AddDOWnum = Table.AddColumn(AddWeekCompleted, "Day of Week Number", each Date.DayOfWeek([Date], WeekStart) + 1, Int64.Type),
+    AddDOWname = Table.AddColumn(AddDOWnum, "Day of Week Name", each Date.ToText([Date], "dddd"), type text),
+    AddDOWinitial = Table.AddColumn(AddDOWname, "Day of Week Initial", each Text.Start([Day of Week Name], 1), type text),
+    AddDateInt = Table.AddColumn(AddDOWinitial, "DateInt", each [Year] * 10000 + [Month] * 100 + [Day of Month], Int64.Type),
+    AddDayOffset = Table.AddColumn(AddDateInt, "CurrDayOffset", each Number.From([Date]) - Number.From(Today), Int64.Type),
+    AddIsAfterToday = Table.AddColumn(AddDayOffset, "IsAfterToday", each [Date] > Today, type logical),
+    AddIsWeekday = Table.AddColumn(AddIsAfterToday, "IsWeekDay", each Date.DayOfWeek([Date], WeekStart) < 5, type logical),
+    AddIsHoliday = Table.AddColumn(AddIsWeekday, "IsHoliday",
+                     each if HolidaysProvided then List.Contains(Holidays, [Date]) else false, type logical),
+    AddIsBizDay = Table.AddColumn(AddIsHoliday, "IsBusinessDay",
+                     each ([IsWeekDay] and not [IsHoliday]), type logical),
+    AddDayType = Table.AddColumn(AddIsBizDay, "Day Type",
+                    each if [IsHoliday] then "Holiday"
+                         else if not [IsWeekDay] then "Weekend"
+                         else "Weekday", type text),
+    #"Changed Type" = Table.TransformColumnTypes(AddDayType,{{"Date", type date}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Start of Week", "WeekStartDate"}})
+
+in
+    #"Renamed Columns"
+
+
+

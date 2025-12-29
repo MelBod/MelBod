@@ -1,0 +1,366 @@
+/****** Object:  View [dbo].[vw_src_factVisitTimeDetails]    Script Date: 12/22/2025 4:07:09 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+------factVisitTimeDetails
+ALTER    VIEW [dbo].[vw_src_factVisitTimeDetails]
+ as
+--factVisitTimeDetails ---!!!Start as of 5 years ago - DE purge data with visit dates older than 5 years ago
+with incr as
+(
+	select  
+		csv.SourceSystem, --nk
+		cev.CevId as ClientEpisodeVisitId, --nk 
+		cev.CevCsvId as ScheduledVisitId, --nk 
+		isnull(tso.TsId, -1) as TimeSlipId --nk
+	from dbo.ClientSchedVisits csv (nolock)
+	inner join dbo.ClientEpisodeVisitsAll AS cev WITH(NOLOCK) 
+		ON cev.CevCsvId = csv.CsvId and cev.SourceSystem = csv.SourceSystem
+	left outer join dbo.[Services] AS s WITH(NOLOCK) 
+		ON s.Sid = cev.CevSId and s.SourceSystem = cev.SourceSystem
+	left outer join dbo.TimeSlips tso (nolock) 
+		on tso.TsSid = s.Sid and tso.SourceSystem = s.SourceSystem
+	where (cev.CevVisitDate >= DATEFROMPARTS(year(dateadd(year, -1, EOMONTH(getdate()))), 1, 1)) --only look at last 1 year (was 5)
+--SC 4/23/2025 - removed incremental logic due to HCHB stating lastupdate columns should be considered deprecated
+--SC 4/29/2025 - renabled incremental logic
+	and --incremental date filters
+	(
+		(isnull(csv.CsvLastUpdate, csv.CsvInsertDate) >= (select isnull(max(convert(date, modifieddatetime)), '1/1/1900') from dbo.factVisitTimeDetails (nolock) where SourceSystem = 'Abode')) OR
+		(isnull(csv.CsvLastUpdate, csv.CsvInsertDate) >= (select isnull(max(convert(date, modifieddatetime)), '1/1/1900') from dbo.factVisitTimeDetails (nolock) where SourceSystem = 'Hospice Home Care')) OR
+		(isnull(tso.TsLastUpdate, tso.TsInsertDate) >= (select isnull(max(convert(date, modifieddatetime)), '1/1/1900') from dbo.factVisitTimeDetails (nolock) where SourceSystem = 'Abode')) OR
+		(isnull(tso.TsLastUpdate, tso.TsInsertDate) >= (select isnull(max(convert(date, modifieddatetime)), '1/1/1900') from dbo.factVisitTimeDetails (nolock) where SourceSystem = 'Hospice Home Care'))
+	)
+	group by 
+		csv.SourceSystem, --nk
+		cev.CevId , --nk 
+		cev.CevCsvId, --nk 
+		isnull(tso.TsId, -1)
+),
+det as
+(
+select DISTINCT
+	csv.SourceSystem, --nk
+	cev.CevId as ClientEpisodeVisitId, --nk --dimClientEpisodeVisit
+	cev.CevCsvId as ScheduledVisitId, --nk --dimVisit 
+	isnull(tso.TsId, -1) as TimeSlipId, --nk --dimTimeSlips--------------
+	tso.TsTstid as TimeSlipTypeId,  --dimTimeSlipType
+	tsc.TscId as TimeSlipCategoryId, --dimTimeSlipCategory
+	tso.TsStartEvent as TimeSlipStartEventId, --dimTimeSlipEvent
+	tso.TsStopEvent as TimeSlipStopEventId, --dimTimeSlipEvent 
+	cev.CevEpiId as EpisodeId, --dimEpisode
+	cea.EpiPaId as PatientId, --dimPatient
+	b.BranchCode as BranchCode,  --dimBranch 
+	right(b.BranchBranchgl, 5) as Location, --dimLocationHierarchy
+	cea.EpiSlId as ServiceLineTypeId, --dimServiceLineType
+	sc.ScId as ServiceCodeId, --dimOasisType (exists) - service codes
+	a.AgencyCompanyId as CompanyId, --dimcompany
+	asb.AsbAgencyId as AgencyId, --dimAgency 
+	cea.EpiTeamId as TeamId, --dimTeam 
+	cev.CevAgId as AgentId, --dimWorker
+	wb.WkrPayrollno as EmployeeId, --dimEmployee 
+	convert(date, tso.TsStart) as StartDate, --dimDates
+	convert(varchar, tso.TsStart, 108) as StartTime, --dimTime --join to dimTime on starttime = FullTimeString24
+	convert(date, tso.TsStop) as StopDate, --dimDates
+	convert(varchar, tso.TsStop, 108) as StopTime, --dimTime --join to dimTime on starttime = FullTimeString24
+	cev.CevVisitDate as VisitDate, --dimDates
+	s.SDate as ServiceDate, --dimDates
+	cedd.CeddDateofDeath as PatientDeathDate, --dimDates
+	tz.TzId as TimeZoneId, --dimTimeZone
+	cev.CevSId as ServicesId,
+	cev.CevVisitNumber as PatientVisitNumber,
+	tstimes.TsStarttime as MinPayableStartDateTime,
+	tstimes.ts_endtime as MinPayableEndDateTime,
+	tstimes.ts_completetime as MaxPayableCompleteTime,
+	tso.TsActualStart as ActualStartDateTime,
+	tso.TsActualEnd as ActualEndDateTime,
+	cea.EpiSocDate as StartOfCareDate,
+	cea.EpiDischargeDate as DischargeDate,
+	cea.EpiStartOfEpisode as StartofEpisodeDate,
+	cea.EpiEndOfEpisode as EndOfEpisodeDate,
+	CONVERT(VARCHAR(10), tsdt.TsStart, 101) as DocTimeDateNotOnServiceDate,
+	--metrics
+	datediff(MINUTE,  tso.TsStart, tso.TsStop) as StartToStopMins,
+	(CASE WHEN tst.TstId IN (1,3) AND tso.TsPayable = 'Y' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END) as PayableTotalTimeMins,
+	ROUND((CAST((CASE WHEN tst.TstId IN (1,3) AND tso.TsPayable = 'Y' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END) as float) / 3600), 2, 1) as PayableTotalTimeHours,
+	(CASE WHEN tso.TsPayable = 'Y' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END) as PayableGrandTotalTimeMins, 
+	ROUND((CAST((CASE WHEN tso.TsPayable = 'Y' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END) as float) / 3600), 2, 1)  as PayableGrandTotalTimeHours, 
+	CASE WHEN tst.TstId = 1 AND tso.TsPayable = 'Y' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END as PayableInHomeTimeMins,
+	ROUND((CAST(CASE WHEN tst.TstId = 1 AND tso.TsPayable = 'Y' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END as float) / 3600), 2, 1) as PayableInHomeTimeHours,
+	CASE WHEN tst.TstId = 2 AND tso.TsPayable = 'Y' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END as PayableTravelTimeMins,
+	ROUND((CAST(CASE WHEN tst.TstId = 2 AND tso.TsPayable = 'Y' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END as float) / 3600), 2, 1) as PayableTravelTimeHours,
+	CASE WHEN tst.TstId = 3 AND tso.TsPayable = 'Y' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END as PayableDocumentationTimeMins,
+	ROUND((CAST(CASE WHEN tst.TstId = 3 AND tso.TsPayable = 'Y' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END as float) / 3600), 2, 1) as PayableDocumentationTimeHours,
+	(CASE WHEN tst.TstId IN (1,3) AND tso.TsPayable = 'N' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END) as NonPayableTotalTimeMins,	
+	ROUND((CAST(CASE WHEN tst.TstId IN (1,3) AND tso.TsPayable = 'N' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END as float) / 3600), 2, 1) as NonPayableTotalTimeHours,
+	(CASE WHEN tso.TsPayable = 'N' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END) as NonPayableGrandTotalTimeMins,	
+	ROUND((CAST(CASE WHEN tso.TsPayable = 'N' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END as float) / 3600), 2, 1) as NonPayableGrandTotalTimeHours,
+	CASE WHEN tst.TstId = 1 AND tso.TsPayable = 'N' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END as NonPayableInHomeTimeMins,
+	ROUND((CAST(CASE WHEN tst.TstId = 1 AND tso.TsPayable = 'N' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END as float) / 3600), 2, 1) as NonPayableInHomeTimeHours,
+	CASE WHEN tst.TstId = 2 AND tso.TsPayable = 'N' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END as NonPayableTravelTimeMins,
+	ROUND((CAST(CASE WHEN tst.TstId = 2 AND tso.TsPayable = 'N' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END as float) / 3600), 2, 1) as NonPayableTravelTimeHours,
+	CASE WHEN tst.TstId = 3 AND tso.TsPayable = 'N' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END as NonPayableDocumentationTimeMins,
+	ROUND((CAST(CASE WHEN tst.TstId = 3 AND tso.TsPayable = 'N' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END as float) / 3600), 2, 1) as NonPayableDocumentationTimeHours,
+	DATEADD(hh, tz.TzAdjust,cev.CevInsertDate) as SyncTime,
+	CASE WHEN ((DATEDIFF(mi,tso.TsStop,DATEADD(hh, tz.TzAdjust, cev.CevInsertDate)))/60.0 ) <= 0.0 THEN 0.0 ELSE ((DATEDIFF(mi,tso.TsStop,DATEADD(hh, tz.TzAdjust, cev.CevInsertDate)))/60.0 ) END as TimeToSync,
+	tso.TsStop as EventTime,
+	tsdt.OffServiceDocTime as LateDocTime,
+	(((CASE WHEN tst.TstId = 3 AND tso.TsPayable = 'Y' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END) + (CASE WHEN tst.TstId = 3 AND tso.TsPayable = 'N' THEN DATEDIFF(ss, tso.TsStart, tso.TsStop) ELSE 0 END)) - ISNULL(tsdt.OffServiceDocTime,0.0)) as AdditionalDocWOLateTime,
+	CASE WHEN DATEPART(dy,tso.TsStart) <> DATEPART(dy,s.SDate) THEN 1 ELSE 0 END as isEventStartDateNotOnServiceDate,
+	case tso.TsPayable when 'Y' then 1 when 'N' then 0 else null end as isTimeSlipPayable,
+	case when tsc.TscId = 1 then 1 else 0 end as isVisitTime,
+	case when tsc.TscId = 2 then 1 else 0 end as isNonVisitTime,
+	case when tso.TsStopevent = 'C' then 1 else 0 end as isStopEventCompleted,
+	case when tso.TsStopevent = 'S' then 1 else 0 end as isStopEventIncomplete,
+	cev.CevBillable as isClientEpisodeVisitBillable,
+	case s.SActive when 'Y' then 1 when 'N' then 0 else null end as isServiceActive,
+	s.SMileagePayMethod as MileagePayMethod,
+	s.SMileageStart as MileageStart,
+	s.SMileageEnd as MileageEnd,
+	s.StripFees as ServiceTripFee,
+	case s.SMileagePayable when 'Y' then 1 when 'N' then 0 else null end as isMileagePayable,
+	case s.SMileageProcessed when 'Y' then 1 when 'N' then 0 else null end as isMileageProcessed,
+	0 as isDeleted,
+	getdate() as ModifiedDateTime
+	--,
+	--tsdt.TsSid --SC Removed
+from	dbo.ClientSchedVisits AS csv WITH(NOLOCK)
+--inner join dbo.AGENTS AS ag WITH(NOLOCK) ON ag.ag_id = csv.csv_agid
+inner join dbo.ClientEpisodesAll AS cea WITH(NOLOCK) ON cea.epiId = csv.csvEpiId and cea.SourceSystem = csv.SourceSystem
+inner join dbo.ClientEpisodeVisitsAll AS cev WITH(NOLOCK) ON cev.CevCsvId = csv.CsvId and cev.SourceSystem = csv.SourceSystem
+--SC 2/5/2025 add to help with incremental
+inner join incr 
+	on incr.SourceSystem = csv.SourceSystem and
+	   incr.ClientEpisodeVisitId = cev.CevId and 
+	   incr.ScheduledVisitId = cev.CevCsvId
+inner join dbo.ServiceCodes AS sc WITH(NOLOCK) ON sc.ScId = csv.CsvScId and sc.SourceSystem = csv.SourceSystem
+inner join dbo.Teams AS t WITH(NOLOCK) ON t.Teamid = cea.EpiTeamId and t.SourceSystem = cea.SourceSystem
+inner join dbo.Branches b WITH(NOLOCK) ON b.BranchCode = cea.EpiBranchcode and b.SourceSystem = cea.SourceSystem
+inner join dbo.AgenciesServicelinesBranches as asb WITH(NOLOCK) ON asb.AsbSlId = cea.EpiSlId and asb.AsbBranchCode = cea.EpiBranchcode and asb.SourceSystem = cea.SourceSystem
+inner join dbo.Agencies a WITH(NOLOCK) ON a.AgencyId = asb.AsbAgencyId and a.SourceSystem = asb.SourceSystem
+inner join dbo.Companies c WITH(NOLOCK) ON c.CompanyId = a.AgencyCompanyId and c.SourceSystem = a.SourceSystem
+left outer join dbo.WorkerBase wb (nolock) on cev.CevAgId = wb.Wkrid and cev.SourceSystem = wb.SourceSystem
+left outer join dbo.[Services] AS s WITH(NOLOCK) ON s.Sid = cev.CevSId and s.SourceSystem = cev.SourceSystem
+left outer join dbo.ClientEpisodeDateofDeath cedd (nolock) on cea.EpiId = cedd.CeddEpiId and cea.SourceSystem = cedd.SourceSystem
+left outer join dbo.TimeZones AS tz ON tz.TzId = b.BranchTzid and tz.SourceSystem = b.SourceSystem
+left outer join dbo.TimeSlips tso (nolock) on tso.TsSid = s.Sid and tso.SourceSystem = s.SourceSystem and isnull(tso.TsId, -1) = incr.TimeSlipId --SC Add 2/18 join to incremental value
+left outer join dbo.TimeSlipTypes AS tst WITH(NOLOCK) ON tst.TstId = tso.TsTstid and tst.SourceSystem = tso.SourceSystem
+left outer join dbo.TimeSlipCategories AS tsc WITH(NOLOCK) ON tsc.TscId = tst.TstTscid and tsc.SourceSystem = tst.SourceSystem
+left outer join dbo.TimeSlipStopEvents AS tsse WITH(NOLOCK) ON tsse.TsseEvent = tso.TsStopEvent and tsse.SourceSystem = tso.SourceSystem
+left outer join dbo.TimeSlipStartEvents AS tsste WITH(NOLOCK) ON tsste.TsseEvent = tso.TsStartEvent and tsste.SourceSystem = tso.SourceSystem
+left outer join
+(SELECT 
+			TsSid,
+			[TsCevId] = cev.CevId,
+			[TsStarttime] = MIN(CASE WHEN TstId = 1 THEN TsStart ELSE NULL END),
+			[ts_endtime] = MIN(CASE WHEN TstId = 1 AND TsStopEvent IN('C', 'S') THEN TsStop ELSE NULL END),
+			[ts_completetime] = MAX(CASE WHEN TsStopEvent = 'C' THEN TsStop ELSE NULL END),
+			ts.SourceSystem
+		FROM 
+			dbo.TimeSlips AS ts WITH(NOLOCK)
+			inner join dbo.TimeSlipTypes AS tst WITH(NOLOCK) ON TstId = TsTstid and ts.SourceSystem = tst.SourceSystem
+			inner join dbo.TimeSlipCategories AS tsc WITH(NOLOCK) ON TscId = TstTscid and tst.SourceSystem = tsc.SourceSystem
+			inner join dbo.TimeSlipStopEvents AS tsse WITH(NOLOCK) ON TsseEvent = TsStopEvent and ts.SourceSystem = tsse.SourceSystem
+			inner join dbo.ClientEpisodeVisitsAll AS cev WITH(NOLOCK) ON CevSId = TsSid and ts.SourceSystem = cev.SourceSystem
+		WHERE
+			tsc.TscId = 1
+		GROUP BY 
+			ts.TsSid, cev.CevId, ts.SourceSystem) tstimes 
+	on tstimes.TsSid = s.Sid
+	and tstimes.TsCevId = cev.CevId
+	and tstimes.SourceSystem = cev.SourceSystem
+left outer join 
+			(SELECT DISTINCT --- THIS SUB-SELECT ONLY FOR USE IN A VISIT TIME SUMMARY REPORT 
+				TsSid
+				,MAX(CONVERT(varchar(10), tsdt.TsStart, 101)) AS 'TsStart' 
+				,SUM(DATEDIFF(ss, TsStart, TsStop)/3600.0 ) AS 'OffServiceDocTime' ---- IN HOURS
+				,SourceSystem
+			FROM dbo.TimeSlips AS tsdt (nolock)
+			WHERE TsTstid = 3 
+			GROUP BY TsSid, SourceSystem
+			) AS tsdt 
+				ON tsdt.TsSid = s.Sid 
+				AND tsdt.SourceSystem = s.SourceSystem
+				AND DATEPART(dy,tsdt.TsStart) <> DATEPART(dy,s.SDate) 	---- ONLY CASES WHERE THEY ARE NOT ON THE SAME DATE  
+--where (cev.CevVisitDate >= DATEFROMPARTS(year(dateadd(year, -5, EOMONTH(getdate()))), 1, 1)) --moved this to CTE "incr"
+)
+--get final result set with dimension surrogate keys
+select distinct
+	det.SourceSystem, --nk
+	det.ClientEpisodeVisitId, --nk --dimClientEpisodeVisit
+	det.ScheduledVisitId, --nk --dimVisit 
+	det.TimeSlipId, --nk --dimTimeSlips
+	isnull(dts.Id, -1) as TimeSlipKey,
+	isnull(dtst.Id, -1) as TimeSlipTypeKey,
+	isnull(dtsc.Id, -1) as TimeSlipCategoryKey,
+	isnull(dtse_s.Id, -1) as TimeSlipEventStartKey,
+	isnull(dtse_sp.Id, -1) as TimeSlipEventStopKey,
+	isnull(dtz.Id, -1) as TimeZoneKey,
+	isnull(dcev.Id, -1) as ClientEpisodeVisitKey,
+	isnull(dv.Id, -1) as ScheduledVisitKey,
+	isnull(dot.Id, -1) as ServiceCodeKey,
+	isnull(dslt.Id, -1) as ServiceLineTypeKey,
+	isnull(de.Id, -1) as EpisodeKey,
+	isnull(dp.Id, -1) as PatientKey,
+	isnull(da.Id, -1) as AgencyKey,
+	isnull(db.Id, -1) as BranchKey,
+	isnull(dlh.Id, -1) as LocationHierarchyKey,
+	isnull(dc.Id, -1) as CompanyKey,
+	isnull(dw.Id, -1) as AgentWorkerKey,
+	isnull(demp.Id, -1) as EmployeeKey,
+	isnull(dd_sd.Id, -1) as StartDateKey,
+	isnull(dt_st.Id, -1) as StartTimeKey,
+	isnull(dd_sp.Id, -1) as StopDateKey,
+	isnull(dt_stp.Id, -1) as StopTimeKey,
+	isnull(dd_vd.Id, -1) as VisitDateKey,
+	isnull(dd_pdd.Id, -1) as PatientDeathDateKey,
+	det.TimeSlipTypeId,  --dimTimeSlipType
+	det.TimeSlipCategoryId, --dimTimeSlipCategory
+	det.TimeSlipStartEventId, --dimTimeSlipEvent
+	det.TimeSlipStopEventId, --dimTimeSlipEvent 
+	det.EpisodeId, --dimEpisode
+	det.PatientId, --dimPatient
+	det.BranchCode,  --dimBranch 
+	det.Location, --dimLocationHierarchy
+	det.ServiceLineTypeId, --dimServiceLineType
+	det.ServiceCodeId, --dimOasisType (exists) - service codes
+	det.CompanyId, --dimcompany
+	det.AgencyId, --dimAgency 
+	det.TeamId, --dimTeam 
+	det.AgentId, --dimWorker
+	det.EmployeeId, --dimEmployee 
+	det.StartDate, --dimDates
+	det.StartTime, --dimTime --join to dimTime on starttime = FullTimeString24
+	det.StopDate, --dimDates
+	det.StopTime, --dimTime --join to dimTime on starttime = FullTimeString24
+	det.VisitDate, --dimDates
+	det.ServiceDate, --dimDates
+	det.PatientDeathDate, --dimDates
+	det.TimeZoneId, --dimTimeZone
+	det.ServicesId,
+	det.PatientVisitNumber,
+	det.MinPayableStartDateTime,
+	det.MinPayableEndDateTime,
+	det.MaxPayableCompleteTime,
+	det.ActualStartDateTime,
+	det.ActualEndDateTime,
+	det.DocTimeDateNotOnServiceDate,
+	det.StartOfCareDate,
+	det.DischargeDate,
+	det.StartofEpisodeDate,
+	det.EndOfEpisodeDate,
+	--metrics
+	det.StartToStopMins,
+	det.PayableTotalTimeMins,
+	det.PayableTotalTimeHours,
+	det.PayableGrandTotalTimeMins, 
+	det.PayableGrandTotalTimeHours, 
+	det.PayableInHomeTimeMins,
+	det.PayableInHomeTimeHours,
+	det.PayableTravelTimeMins,
+	det.PayableTravelTimeHours,
+	det.PayableDocumentationTimeMins,
+	det.PayableDocumentationTimeHours,
+	det.NonPayableTotalTimeMins,	
+	det.NonPayableTotalTimeHours,
+	det.NonPayableGrandTotalTimeMins,	
+	det.NonPayableGrandTotalTimeHours,
+	det.NonPayableInHomeTimeMins,
+	det.NonPayableInHomeTimeHours,
+	det.NonPayableTravelTimeMins,
+	det.NonPayableTravelTimeHours,
+	det.NonPayableDocumentationTimeMins,
+	det.NonPayableDocumentationTimeHours,
+	det.SyncTime, --SC shoudl be SyncDateTime
+	det.TimeToSync,
+	det.EventTime, --SC should be EventDateTime
+	det.LateDocTime,
+	det.AdditionalDocWOLateTime,
+	det.isEventStartDateNotOnServiceDate,
+	det.isTimeSlipPayable,
+	det.isVisitTime,
+	det.isNonVisitTime,
+	det.isStopEventCompleted,
+	det.isStopEventIncomplete,
+	det.isClientEpisodeVisitBillable,
+	det.isServiceActive,
+	det.MileagePayMethod,
+	det.MileageStart,
+	det.MileageEnd,
+	det.ServiceTripFee,
+	det.isMileagePayable,
+	det.isMileageProcessed,
+	det.isDeleted,
+	det.ModifiedDateTime
+from det 
+left outer join dbo.dimTimeSlip dts (nolock)
+on det.TimeSlipId = dts.TimeSlipId and
+   dts.SourceSystem = det.SourceSystem
+left outer join dbo.dimTimeSlipType dtst (nolock)
+on det.TimeSlipTypeId = dtst.TimeSlipTypeId and
+   dtst.SourceSystem = det.SourceSystem
+left outer join dbo.dimTimeSlipCategory dtsc (nolock)
+on det.TimeSlipCategoryId = dtsc.TimeSlipCategoryId and
+   dtsc.SourceSystem = det.SourceSystem
+left outer join dbo.dimTimeSlipEvent dtse_s (nolock)
+	on det.TimeSlipStartEventId = dtse_s.TimeSlipEventId and
+	   dtse_s.SourceSystem = det.SourceSystem and
+	   dtse_s.EventType = 'Start'
+left outer join dbo.dimTimeSlipEvent dtse_sp (nolock)
+	on det.TimeSlipStopEventId = dtse_sp.TimeSlipEventId and
+	   dtse_sp.SourceSystem = det.SourceSystem and
+	   dtse_sp.EventType = 'Stop'
+left outer join dbo.dimTimeZone dtz (nolock)
+	on det.TimeZoneId = dtz.TimeZoneId
+left outer join dbo.dimClientEpisodeVisit dcev (nolock)
+	on det.ClientEpisodeVisitId = dcev.ClientEpisodeVisitId and
+	   dcev.SourceSystem = det.SourceSystem
+left outer join dbo.dimVisit dv (nolock)
+	on det.ScheduledVisitId = dv.VisitScheduleId and
+	dv.SourceSystem = det.SourceSystem
+left outer join dbo.dimOasisType dot (nolock)
+	on det.ServiceCodeId = dot.OasisTypeId and
+	dot.SourceSystem = det.SourceSystem
+left outer join dbo.dimServiceLineType dslt (nolock)
+	on det.ServiceLineTypeId = dslt.ServiceLineTypeId and
+	dslt.SourceSystem = det.SourceSystem
+left outer join dbo.dimEpisode de (nolock)
+	on det.EpisodeId = de.EpisodeId and
+	de.SourceSystem = det.SourceSystem
+left outer join dbo.dimPatient dp (nolock)
+	on det.PatientId = dp.PatientId and 
+	dp.SourceSystem = det.SourceSystem
+left outer join dbo.dimAgency da (nolock)
+	on det.AgencyId = da.AgencyId and
+	det.BranchCode = da.AgencyBranchCode and
+	da.SourceSystem = det.SourceSystem
+left outer join dbo.dimBranch db (nolock)
+	on det.BranchCode = db.BranchCode and
+	db.SourceSystem = det.SourceSystem
+left outer join dbo.dimLocationHierarchy dlh (nolock)
+	on det.Location = dlh.Location 
+left outer join dbo.dimCompany dc (nolock)
+	on det.CompanyId = dc.CompanyId and
+	dc.SourceSystem = det.SourceSystem
+left outer join dbo.dimWorker dw (nolock)
+	on det.AgentId = dw.WorkerId and
+	dw.SourceSystem = det.SourceSystem
+left outer join dbo.dimEmployee demp (nolock)
+	on det.EmployeeId = demp.EmployeeId 
+	and demp.CurrentEmployeeFlag = 'Y' 
+	and demp.CurrentRecordFlag = 'Y' 
+	and demp.DeleteFlag = 'N'
+left outer join dbo.dimDates dd_sd (nolock)
+	on det.StartDate = dd_sd.DateValue 
+left outer join dbo.dimTime dt_st (nolock)
+	on det.StartTime = dt_st.FullTimeString24
+left outer join dbo.dimDates dd_sp (nolock)
+	on det.StopDate = dd_sp.DateValue 
+left outer join dbo.dimTime dt_stp (nolock)
+	on det.StopTime = dt_stp.FullTimeString24
+left outer join dbo.dimDates dd_vd (nolock)
+	on det.VisitDate = dd_vd.DateValue 
+left outer join dbo.dimDates dd_pdd (nolock)
+	on det.PatientDeathDate = dd_pdd.DateValue
+;
+GO

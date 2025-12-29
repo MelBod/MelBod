@@ -1,0 +1,434 @@
+Worker Count = 
+VAR __SelectedWeek = SELECTEDVALUE(dimWeek[WeekStartDate])
+VAR __WeekDates =
+    SELECTCOLUMNS(CALENDAR(__SelectedWeek, __SelectedWeek + 6), "Date", [Date])
+VAR __WeekFilter = TREATAS(__WeekDates, dimDate[Date])
+
+RETURN
+IF(
+    ISBLANK(__SelectedWeek),
+    BLANK(),
+    CALCULATE(
+        DISTINCTCOUNT(factVisitTimeDetail[WorkerId]),
+        __WeekFilter
+    )
+)
+
+
+Weeks Worked = 
+VAR SelectedWeek =
+    SELECTEDVALUE(dimWeek[WeekStartDate])
+
+RETURN
+IF(
+    ISBLANK(SelectedWeek),
+    BLANK(),
+    1
+)
+
+
+Total Miles = 
+SUMX(
+    factVisitTimeDetail,
+    COALESCE(factVisitTimeDetail[TotalMileage], 0)
+)
+
+
+Service Points = 
+VAR SelectedWeek = SELECTEDVALUE(dimWeek[WeekStartDate])
+VAR WeekDates =
+    SELECTCOLUMNS(
+        CALENDAR(SelectedWeek, SelectedWeek + 6),
+        "Date", [Date]
+    )
+VAR WeekFilter = 
+    TREATAS(WeekDates, dimDate[Date])
+RETURN
+IF(
+    ISBLANK(SelectedWeek),
+    BLANK(),
+    CALCULATE(
+        SUMX(
+            factVisitTimeDetail,
+            RELATED(dimHCHBServiceCodes[Point Value])
+        ),
+        factVisitTimeDetail[VisitStatus] = "Completed",
+        WeekFilter
+    )
+)
+
+Non - Admits = 
+CALCULATE(
+    DISTINCTCOUNT( factVisitTimeDetail[VisitId] ),
+    dimHCHBServiceCodes[ScCode] = "RN00H",
+    factVisitTimeDetail[VisitStatus] = "NON-ADMIT",
+    USERELATIONSHIP( factVisitTimeDetail[VisitDate], dimDate[Date] )
+)
+
+
+Mileage Points = 
+VAR Miles = [Total Miles]
+RETURN
+IF( Miles < 300, 0, 1 + INT( (Miles - 300) / 75 ) )
+
+
+Department Filters = VAR MaxFilters = 10
+RETURN
+     IF
+     (
+          ISFILTERED( 'dimWorker'[Department] ),
+          VAR ___f =
+               FILTERS( 'dimWorker'[Department] )
+          VAR ___r = COUNTROWS( ___f )
+          VAR ___t =
+               TOPN
+               (
+                    MaxFilters,
+                    ___f,
+                    'dimWorker'[Department]
+               )
+          VAR ___d =
+               CONCATENATEX
+               (
+                    ___t,
+                    'dimWorker'[Department],
+                    UNICHAR( 13 ) & UNICHAR( 10 )
+               )
+          VAR ___x =
+               "Department Filter(s): " & UNICHAR( 13 )
+                    & UNICHAR( 10 )
+                    & ___d
+                    & IF
+                    (
+                         ___r > MaxFilters,
+                         ", ... [" & ___r & " items selected]"
+                    )
+          RETURN
+               ___x & UNICHAR( 13 ) & UNICHAR( 10 )
+     )
+
+Employee Status Filters = VAR MaxFilters = 10
+RETURN
+     IF
+     (
+          ISFILTERED
+          (
+               'dimWorker'[EmployeeStatus]
+          ),
+          VAR ___f =
+               FILTERS( 'dimWorker'[EmployeeStatus] )
+          VAR ___r = COUNTROWS( ___f )
+          VAR ___t =
+               TOPN
+               (
+                    MaxFilters,
+                    ___f,
+                    'dimWorker'[EmployeeStatus]
+               )
+          VAR ___d =
+               CONCATENATEX
+               (
+                    ___t,
+                    'dimWorker'[EmployeeStatus],
+                    UNICHAR( 13 ) & UNICHAR( 10 )
+               )
+          VAR ___x =
+               "Employee Status Filter(s): "
+                    & UNICHAR( 13 )
+                    & UNICHAR( 10 )
+                    & ___d
+                    & IF
+                    (
+                         ___r > MaxFilters,
+                         ", ... [" & ___r & " items selected]"
+                    )
+          RETURN
+               ___x & UNICHAR( 13 ) & UNICHAR( 10 )
+     )
+
+Service Code Filters = VAR MaxFilters = 5
+RETURN
+     IF
+     (
+          ISFILTERED( 'dimHCHBServiceCodes'[ScCode] ),
+          VAR ___f =
+               FILTERS( 'dimHCHBServiceCodes'[ScCode] )
+          VAR ___r = COUNTROWS( ___f )
+          VAR ___t =
+               TOPN
+               (
+                    MaxFilters,
+                    ___f,
+                    'dimHCHBServiceCodes'[ScCode]
+               )
+          VAR ___d =
+               CONCATENATEX
+               (
+                    ___t,
+                    'dimHCHBServiceCodes'[ScCode],
+                    UNICHAR( 13 ) & UNICHAR( 10 )
+               )
+          VAR ___x =
+               "Service Codes = " & ___d
+                    & IF
+                    (
+                         ___r > MaxFilters,
+                         ", ... [" & ___r & " items selected]"
+                    )
+                    & " "
+          RETURN
+               ___x & UNICHAR( 13 ) & UNICHAR( 10 ),
+          "No Service Code filters applied."
+     )
+
+Visit Status Filters = VAR MaxFilters = 10
+RETURN
+     IF
+     (
+          ISFILTERED( 'factVisitTimeDetail'[VisitStatus] ),
+          VAR ___f =
+               FILTERS( 'factVisitTimeDetail'[VisitStatus] )
+          VAR ___r = COUNTROWS( ___f )
+          VAR ___t =
+               TOPN
+               (
+                    MaxFilters,
+                    ___f,
+                    'factVisitTimeDetail'[VisitStatus]
+               )
+          VAR ___d =
+               CONCATENATEX
+               (
+                    ___t,
+                    'factVisitTimeDetail'[VisitStatus],
+                    UNICHAR( 13 ) & UNICHAR( 10 )
+               )
+          VAR ___x =
+               "Visit Status Filter(s): "
+                    & UNICHAR( 13 )
+                    & UNICHAR( 10 )
+                    & ___d
+                    & IF
+                    (
+                         ___r > MaxFilters,
+                         ", ... [" & ___r & " items selected]"
+                    )
+          RETURN
+               ___x & UNICHAR( 13 ) & UNICHAR( 10 )
+     )
+
+Visit Type Filters = VAR MaxFilters = 10
+RETURN
+     IF
+     (
+          ISFILTERED
+          (
+               'dimHCHBServiceCodes'[ScVisitType]
+          ),
+          VAR ___f =
+               FILTERS
+               (
+                    'dimHCHBServiceCodes'[ScVisitType]
+               )
+          VAR ___r = COUNTROWS( ___f )
+          VAR ___t =
+               TOPN
+               (
+                    MaxFilters,
+                    ___f,
+                    'dimHCHBServiceCodes'[ScVisitType]
+               )
+          VAR ___d =
+               CONCATENATEX
+               (
+                    ___t,
+                    'dimHCHBServiceCodes'[ScVisitType],
+                    UNICHAR( 13 ) & UNICHAR( 10 )
+               )
+          VAR ___x =
+               "Visit Type Filter(s): " & UNICHAR( 13 )
+                    & UNICHAR( 10 )
+                    & ___d
+                    & IF
+                    (
+                         ___r > MaxFilters,
+                         ", ... [" & ___r & " items selected]"
+                    )
+                    & " "
+          RETURN
+               ___x & UNICHAR( 13 ) & UNICHAR( 10 )
+     )
+
+--LAST REFRESH
+Last Refresh = CONCATENATE
+(
+     "Data Last Refreshed: ",
+     MAX( 'LastRefresh'[RefreshTime] )
+)
+
+
+--POWER BI NOTICES
+Report Notice = VAR __DISTINCT_VALUES_COUNT =
+     DISTINCTCOUNT
+     (
+          'PowerBINotices'[Notice Text]
+     )
+VAR __MAX_VALUES_TO_SHOW = 2
+RETURN
+     COALESCE
+     (
+          IF
+          (
+               __DISTINCT_VALUES_COUNT
+                    > __MAX_VALUES_TO_SHOW,
+               CONCATENATE
+               (
+                    CONCATENATEX
+                    (
+                         TOPN
+                         (
+                              __MAX_VALUES_TO_SHOW,
+                              VALUES( 'PowerBINotices'[Notice Text] ),
+                              'PowerBINotices'[Notice Text], ASC
+                         ),
+                         'PowerBINotices'[Notice Text],
+                         " | ",
+                         'PowerBINotices'[Notice Text], ASC
+                    ),
+                    ", etc."
+               ),
+               CONCATENATEX
+               (
+                    VALUES( 'PowerBINotices'[Notice Text] ),
+                    'PowerBINotices'[Notice Text],
+                    " | ",
+                    'PowerBINotices'[Notice Text], ASC
+               )
+          ),
+          ""
+     )
+
+Notice Color Text = IF
+(
+     [Report Notice] = "",
+     "#FFFFFF",
+     "Blue"
+)
+
+Notice Color = IF
+(
+     [Report Notice] = "",
+     "#FFFFFF00",
+     SELECTEDVALUE
+     (
+          'PowerBINotices'[crf1c_noticecolorhex]
+     )
+)
+
+Change detection Maximum for modifiedon = MAX( 'PowerBINotices'[Modified On] )
+
+
+Current vs Budget = 
+// COALESCE (
+		CALCULATE(
+			[ADC MTD],
+			(
+			FILTER(
+				DimDates,
+				DimDates[MonthsPrior] = 0
+			)
+			)
+		) - [Budget Current Month]
+	
+
+Avg Visits / Worker = 
+AVERAGEX (
+    VALUES ( dimWeek[WeekStartDate] ),
+    DIVIDE (
+        CALCULATE ( [Billable Visits] ),
+        CALCULATE ( [Worker Count] )))
+
+Avg Visits per Day = 
+AVERAGEX(VALUES(dimWeek[WeekStartDate]),
+DIVIDE([Billable Visits], [Days Worked])
+)
+
+Admissions = 
+CALCULATE(
+    DISTINCTCOUNT( factVisitTimeDetail[ScheduledVisitId] ),
+    dimHCHBServiceCodes[ScVisitType] = "Hospice SOC",
+    USERELATIONSHIP( factVisitTimeDetail[VisitDate], dimDate[Date] )
+)
+
+
+Billable Visits = 
+COUNTROWS (
+    FILTER (
+        VALUES ( factVisitTimeDetail[ScheduledVisitId] ),
+        CALCULATE (
+            MAX ( factVisitTimeDetail[VisitStatus] ) = "COMPLETED"
+                && MAX ( factVisitTimeDetail[Billable] ) = 1)))
+
+
+Goal = 
+SUMX(
+    VALUES( factVisitTimeDetail[WorkerId] ),
+    VAR WorkerWeeks = [Weeks Worked]
+    VAR WeeklyGoal =
+        CALCULATE( MAX( dimWorker[Goals] ) )
+    RETURN
+        WeeklyGoal * WorkerWeeks
+)
+
+Mileage Points = 
+VAR Miles = [Total Miles]
+RETURN
+IF( Miles < 300, 0, 1 + INT( (Miles - 300) / 75 ) )
+
+
+
+Service Code Filters = VAR MaxFilters = 5
+RETURN
+     IF
+     (
+          ISFILTERED( 'dimHCHBServiceCodes'[ScCode] ),
+          VAR ___f =
+               FILTERS( 'dimHCHBServiceCodes'[ScCode] )
+          VAR ___r = COUNTROWS( ___f )
+          VAR ___t =
+               TOPN
+               (
+                    MaxFilters,
+                    ___f,
+                    'dimHCHBServiceCodes'[ScCode]
+               )
+          VAR ___d =
+               CONCATENATEX
+               (
+                    ___t,
+                    'dimHCHBServiceCodes'[ScCode],
+                    UNICHAR( 13 ) & UNICHAR( 10 )
+               )
+          VAR ___x =
+               "Service Codes = " & ___d
+                    & IF
+                    (
+                         ___r > MaxFilters,
+                         ", ... [" & ___r & " items selected]"
+                    )
+                    & " "
+          RETURN
+               ___x & UNICHAR( 13 ) & UNICHAR( 10 ),
+          "No Service Code filters applied."
+     )
+
+
+
+
+
+Last Refresh = CONCATENATE
+(
+     "Data Last Refreshed: ",
+     MAX( 'LastRefresh'[RefreshTime] )
+)
+

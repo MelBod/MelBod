@@ -1,0 +1,28 @@
+﻿FromColumn,FromTable,IsActive,Relationship_ID,ToColumn,ToTable
+AdmissionSOCDateKey,FactM0Item,true,62,DateKey,dimDates
+bpKey,FactTaskProductivity_HH,false,428562,BPKey,dimBillingPeriod_HH
+BranchCode,dimBillingPeriod_HH,true,23015,BranchCode,dimBranch
+BranchCode,FactM0Item,true,23014,BranchCode,dimBranch
+BranchCode,FactTaskProductivity_HH,true,23013,BranchCode,dimBranch
+DateKey,CustomDateIntervals,true,43928,DateKey,dimDates
+DateKey,DateFilterTable,true,70,DateKey,dimDates
+EndOfStayDateKey,FactM0Item,false,61,DateKey,dimDates
+epiid,Requests,true,83,EpisodeId,EpisodeFilter
+Episode ID,FactTaskProductivity_HH,false,81,epiid,Requests
+Episode ID,FactTaskProductivity_HH,true,82,EpisodeId,EpisodeFilter
+episodeStartDate,Requests,true,80,DateKey,dimDates
+InsuranceId,dimBillingPeriod_HH,true,74,InsuranceId,DimInsurance
+InsuranceSystemId,FactTaskProductivity_HH,true,69,InsuranceSystemId,DimInsurance
+Location,dimBillingPeriod_HH,true,17747,Location Code,dimAlternateLocationHierarchy
+Location,FactM0Item,true,66,Location Code,dimAlternateLocationHierarchy
+Location,FactTaskProductivity_HH,true,67,Location Code,dimAlternateLocationHierarchy
+PatientId,dimBillingPeriod_HH,true,143734,PatientId,DimPatientInfo
+PatientSystemId,FactM0Item,true,73,PatientSystemId,DimPatientInfo
+PatientSystemId,FactTaskProductivity_HH,true,72,PatientSystemId,DimPatientInfo
+skBillingPeriodEndDateKey,dimBillingPeriod_HH,true,78,DateKey,dimDates
+skBillingPeriodStartDateKey,dimBillingPeriod_HH,false,77,DateKey,dimDates
+skepisodeEndDateKey,FactTaskProductivity_HH,false,65,DateKey,dimDates
+skepisodeStartDateKey,FactTaskProductivity_HH,false,79,DateKey,dimDates
+skInsuranceKey,FactM0Item,true,64,ID,DimInsurance
+skScheduleDateKey,FactTaskProductivity_HH,false,68,DateKey,dimDates
+skVisitDateKey,FactTaskProductivity_HH,false,63,DateKey,dimDates

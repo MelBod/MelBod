@@ -1,0 +1,110 @@
+let
+    Source = PowerPlatform.Dataflows(null),
+    Workspaces = Source{[Id="Workspaces"]}[Data],
+    #"60d5553a-751f-45c1-a717-1880b996ea89" = Workspaces{[workspaceId="60d5553a-751f-45c1-a717-1880b996ea89"]}[Data],
+    #"e8fe81c1-3943-4845-904f-154d0175d7b3" = #"60d5553a-751f-45c1-a717-1880b996ea89"{[dataflowId="e8fe81c1-3943-4845-904f-154d0175d7b3"]}[Data],
+    dimAlternateLocationHierarchy_ = #"e8fe81c1-3943-4845-904f-154d0175d7b3"{[entity="dimAlternateLocationHierarchy",version=""]}[Data]
+in
+    dimAlternateLocationHierarchy_
+
+
+let
+  Source = PowerPlatform.Dataflows(null), 
+  Workspaces = Source{[Id = "Workspaces"]}[Data], 
+  SelectedWorkspace = Workspaces{[workspaceId = "0f97fde8-e729-46a6-8330-ab13f244885f"]}[Data], 
+  SelectedDataflow = SelectedWorkspace{[dataflowId = "0568122f-7653-4c1b-9b83-f91381f4488d"]}[Data], 
+  dimAlternateLocationHierarchy_ = SelectedDataflow
+    {[entity = "dimAlternateLocationHierarchy", version = ""]}
+    [Data], 
+  FilteredRows = Table.SelectRows(
+    dimAlternateLocationHierarchy_, 
+    each [Tree Code]
+      = "BHS_LOC_PRIMARY"
+      and [Level 5 Combined] = "07440-CONSOLIDATED HOME HEALTH & HOSPICE"
+  ), 
+  // Add service line classification
+  AddedCustom = Table.AddColumn(
+    FilteredRows, 
+    "Service Line", 
+    each 
+      if Text.Contains(Text.Upper([Level 7 Description]), "PD") then
+        "Private Duty"
+      else if Text.Contains(Text.Upper([Level 7 Description]), "PRIVATE DUTY") then
+        "Private Duty"
+      else if [Level 6 Code] = "09145" then
+        "Hospice"
+      else if [Level 6 Code] = "07427" then
+        "Home Health"
+      else
+        "NA"
+  ), 
+  // Remove unused columns
+  SelectedColumns = Table.SelectColumns(
+    AddedCustom, 
+    {
+      "Id", 
+      "Tree Code", 
+      "Location Code", 
+      "Location Description", 
+      "Location Combined", 
+      //"Level 12 Description", "Level 12 Code", "Level 12 Combined", 
+      "Level 11 Description", 
+      "Level 11 Code", 
+      "Level 11 Combined", 
+      "Level 10 Description", 
+      "Level 10 Code", 
+      "Level 10 Combined", 
+      "Level 9 Description", 
+      "Level 9 Code", 
+      "Level 9 Combined", 
+      "Level 8 Description", 
+      "Level 8 Code", 
+      "Level 8 Combined", 
+      "Level 7 Description", 
+      "Level 7 Code", 
+      "Level 7 Combined", 
+      "Level 6 Description", 
+      "Level 6 Code", 
+      "Level 6 Combined", 
+      "Level 5 Description", 
+      "Level 5 Code", 
+      "Level 5 Combined", 
+      "Service Line"
+    }
+  ), 
+  // Rename levels to be more business friendly
+  RenamedColumns = Table.RenameColumns(
+    SelectedColumns, 
+    {
+      {"Level 5 Combined", "Division Combined"}, 
+      {"Level 5 Code", "Division Code"}, 
+      {"Level 5 Description", "Division Description"}, 
+      //{"Level 6 Combined", "Division Combined"}, {"Level 6 Code", "Division Code"}, {"Level 6 Description", "Division Description"},
+      {"Level 6 Combined", "President Combined"}, 
+      {"Level 6 Code", "President Code"}, 
+      {"Level 6 Description", "President Description"}, 
+      {"Level 7 Combined", "RP Combined"}, 
+      {"Level 7 Code", "RP Code"}, 
+      {"Level 7 Description", "RP Description"}, 
+      {"Level 8 Combined", "VP Combined"}, 
+      {"Level 8 Code", "VP Code"}, 
+      {"Level 8 Description", "VP Description"}, 
+      {"Level 9 Combined", "RD Combined"}, 
+      {"Level 9 Code", "RD Code"}, 
+      {"Level 9 Description", "RD Description"}, 
+      {"Level 10 Combined", "ED Combined"}, 
+      {"Level 10 Code", "ED Code"}, 
+      {"Level 10 Description", "ED Description"}, 
+      {"Level 11 Combined", "Branch Combined"}, 
+      {"Level 11 Code", "Branch Code"}, 
+      {"Level 11 Description", "Branch Description"}, 
+      //    {"Level 12 Combined", "Unknown Combined"}, {"Level 12 Code", "Unknown Code"}, {"Level 12 Description", "Unknown Description"},
+      {"Location Description", "Location Name"}
+    }
+  )
+in
+  RenamedColumns
+
+
+
+Hi Brian. I know last week was a lot, thanks for covering while I am sick. I completed adding the table to the dataflow and had to filter = Table.SelectRows(dimAlternateLocationHierarchy_, each ([RP Description] = "RP: HOME HEALTH")) to get it to match back to the table that was already in the Op Mgmt Metrics report. 

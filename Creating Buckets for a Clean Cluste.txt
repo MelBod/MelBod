@@ -1,0 +1,113 @@
+Creating Buckets for a Clean Clustered Column Visual
+
+= Table.AddColumn(
+    AWVEligibilityDate,
+    "DueDateBucket",
+    each
+      if [AWV Due Date] = null then
+        null
+      else if [AWV Due Date] = "No Aprima AWV" then
+        "No Aprima AWV"
+      else if Text.Upper([PrimaryPayor])
+        = "SIGNATURE ADVANTAGE" and Date.From([AWV Due Date])
+        <= Date.From(DateTime.LocalNow())
+      then
+        "Overdue"
+      else if Text.Upper([PrimaryPayor])
+        = "SIGNATURE ADVANTAGE" and Date.From([AWV Due Date])
+        > Date.From(DateTime.LocalNow())
+          and Date.FromText([AWV Due Date])
+        <= Date.From(
+          Date.AddDays(DateTime.LocalNow(), 30)
+        )
+      then
+        "Within 30 days"
+      else if Text.Upper([PrimaryPayor])
+        = "SIGNATURE ADVANTAGE" and Date.From([AWV Due Date])
+        > Date.From(
+          Date.AddDays(DateTime.LocalNow(), 30)
+        )
+          and Date.FromText([AWV Due Date])
+        <= Date.From(
+          Date.AddDays(DateTime.LocalNow(), 90)
+        )
+      then
+        "Within 90 days"
+      else if Text.Upper([PrimaryPayor])
+        = "SIGNATURE ADVANTAGE" and Date.From([AWV Due Date])
+        > Date.From(
+          Date.AddDays(DateTime.LocalNow(), 90)
+        )
+          and Date.FromText([AWV Due Date])
+        <= Date.From(
+          Date.AddDays(DateTime.LocalNow(), 180)
+        )
+      then
+        "Within 180 days"
+      else if Text.Upper([PrimaryPayor])
+        = "SIGNATURE ADVANTAGE" and Date.From([AWV Due Date])
+        > Date.From(
+          Date.AddDays(DateTime.LocalNow(), 180)
+        )
+          and Date.FromText([AWV Due Date])
+        <= Date.EndOfYear(
+          Date.AddDays(
+            Date.From(DateTime.LocalNow()),
+            0
+          )
+        )
+      then
+        "Due by End of Year"
+		      else if Text.Upper([PrimaryPayor])
+        <> "SIGNATURE ADVANTAGE" and Date.From([AWV Eligibility Date])
+        <= Date.From(DateTime.LocalNow())
+      then
+        "Overdue"
+      else if Text.Upper([PrimaryPayor])
+        <> "SIGNATURE ADVANTAGE" and Date.From([AWV Eligibility Date])
+        > Date.From(DateTime.LocalNow())
+          and Date.FromText([AWV Eligibility Date])
+        <= Date.From(
+          Date.AddDays(DateTime.LocalNow(), 30)
+        )
+      then
+        "Within 30 days"
+      else if Text.Upper([PrimaryPayor])
+        <> "SIGNATURE ADVANTAGE" and Date.From([AWV Eligibility Date])
+        > Date.From(
+          Date.AddDays(DateTime.LocalNow(), 30)
+        )
+          and Date.FromText([AWV Eligibility Date])
+        <= Date.From(
+          Date.AddDays(DateTime.LocalNow(), 90)
+        )
+      then
+        "Within 90 days"
+      else if Text.Upper([PrimaryPayor])
+        <> "SIGNATURE ADVANTAGE" and Date.From([AWV Eligibility Date])
+        > Date.From(
+          Date.AddDays(DateTime.LocalNow(), 90)
+        )
+          and Date.FromText([AWV Eligibility Date])
+        <= Date.From(
+          Date.AddDays(DateTime.LocalNow(), 180)
+        )
+      then
+        "Within 180 days"
+      else if Text.Upper([PrimaryPayor])
+        <> "SIGNATURE ADVANTAGE" and Date.From([AWV Eligibility Date])
+        > Date.From(
+          Date.AddDays(DateTime.LocalNow(), 180)
+        )
+          and Date.FromText([AWV Eligibility Date])
+        <= Date.EndOfYear(
+          Date.AddDays(
+            Date.From(DateTime.LocalNow()),
+            0
+          )
+        )
+      then
+        "Due by End of Year"
+      else
+        "Due after End of Year"
+  )

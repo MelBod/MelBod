@@ -1,0 +1,274 @@
+Billing Periods Beginning 0 Visits = CALCULATE (
+    SUM ( dimBillingPeriod_HH[GhostBillingPeriodOpen] ),
+    USERELATIONSHIP ( dimBillingPeriod_HH[skbillingPeriodStartDateKey], DimDates[DateKey] )
+)
+
+LUPA Actuals MTD = SUMX (
+    FILTER (
+        DimDates,
+        DimDates[MonthsPrior] = 0
+            && DimDates[Date] <= DimDates[Yesterday]
+    ),
+    [LUPA Actuals]
+)
+
+MetricValue = 
+VAR _Label = MAX ( MetricsHierarchy[MetricLabel] )
+RETURN
+CALCULATE (
+    SWITCH (
+        TRUE(),
+
+        -- NVDC metrics
+        _Label = "NVDC %", [NVDC %],
+        _Label = "NVDC Tasks", [NVDC Count],
+        _Label = "Discharges", [Discharges],
+
+        -- Missed Visits metrics
+        _Label = "% Missed Visits", [% Missed Visits],
+        _Label = "Missed Visits", [Missed Visits],
+        _Label = "Completed Visits", [Completed Visits],
+        _Label = "Completed + Missed", [Missed Denom],
+
+        -- LUPA metrics
+        _Label = "LUPA Rate", [LUPA Rate],
+        _Label = "LUPAs", [LUPA Actuals],
+        _Label = "Billing Periods Ending", [Billing Periods Ending],
+
+        -- LUPA 1st Billing Period
+        _Label = "1st Billing Period LUPA Rate", [1st Billing Period LUPA Rate],
+        _Label = "LUPA 1st Billing Period", [LUPA 1st Billing Period],
+        _Label = "1st Billing Periods Ending", [1st Billing Periods Ending],
+
+        -- LUPA 2nd Billing Period
+        _Label = "2nd Billing Period LUPA Rate", [2nd Billing Period LUPA Rate],
+        _Label = "LUPA 2nd Billing Period", [LUPA 2nd Billing Period],
+        _Label = "2nd Billing Periods Ending", [2nd Billing Periods Ending],
+
+        -- Ghost metrics
+        _Label = "% Ghost Billing Periods", [% BP No visits],
+        _Label = "Billing Periods Ending 0 Visits", [Billing Periods Ending 0 Visits],
+        _Label = "Billing Periods Ending Total", [Billing Periods Ending Total],
+
+        -- VPE metrics
+        _Label = "VPE (ALL)", [VPE],
+        _Label = "VPE - RN", [VPE - RN],
+        _Label = "VPE - LPN", [VPE - LPN],
+        _Label = "VPE - SN", [VPE - SN],
+        _Label = "VPE - PT", [VPE - PT],
+        _Label = "VPE - PTA", [VPE - PTA],
+        _Label = "VPE - OT", [VPE - OT],
+        _Label = "VPE - COTA", [VPE - COTA],
+        _Label = "VPE - ST", [VPE - ST],
+        _Label = "VPE - AIDE", [VPE - AIDE],
+        _Label = "VPE - MSW", [VPE - MSW],
+
+        -- ACH metrics
+        _Label = "All ACH Rate", [All ACH Rate],
+        _Label = "All ACH", [All ACH],
+        _Label = "Ending Assessments (for Hosp)", [Ending Assessments (for Hosp)],
+
+        -- Rehospitalization
+        _Label = "30 Day Rehospitalizations", [30 Day Rehospitalizations],
+        _Label = "Hospitalization within 30 Days", [Hospitalization w/in 30 Days],
+        _Label = "Admissions 30 Days+", [Admissions 30 Days+],
+
+        BLANK()
+    )
+)
+
+MetricValue Display = 
+VAR _val = [MetricValue]
+VAR _format = MAX ( MetricsHierarchy[FormatType] )
+VAR _precision = MAX ( MetricsHierarchy[Precision] )
+VAR _decimals = REPT ( "0", _precision )
+RETURN
+SWITCH (
+    TRUE(),
+    _format = "PERCENT", FORMAT ( _val, "0." & _decimals & "%" ),
+    _format = "DECIMAL", FORMAT ( _val, "0." & _decimals ),
+    _format = "NUMBER", FORMAT ( _val, "#,0" ),
+    FORMAT ( _val, "General Number" )
+)
+
+
+Episodes Ending = 
+CALCULATE (
+    DISTINCTCOUNT ( FactTaskProductivity_HH[Episode ID] ),
+    FactTaskProductivity_HH[OpenClosedFlag] = "Closed",
+    FactTaskProductivity_HH[CompletedVisits] > 0,
+    NOT ( ISBLANK ( FactTaskProductivity_HH[CompletedVisits] ) ),
+    USERELATIONSHIP (
+        FactTaskProductivity_HH[skepisodeEndDateKey],
+        DimDates[DateKey]
+    )
+)
+
+Non Billable Visits = CALCULATE (
+    SUM ( FactTaskProductivity_HH[CompletedVisits] ),
+    FactTaskProductivity_HH[Visitbillable] = 0,
+    FactTaskProductivity_HH[MissedVisit] = 0,
+    FactTaskProductivity_HH[ServiceBillable] = 1, 
+    NOT ( ISBLANK(FactTaskProductivity_HH[VisitId])
+    ))
+
+
+VPE - AIDE = 
+VAR __CurrentJobCode = "AIDE"
+VAR __EpisodesEnding =
+    CALCULATE (
+        [Episodes Ending],
+        FactTaskProductivity_HH[Service Job Code] = __CurrentJobCode ,
+        USERELATIONSHIP ( FactTaskProductivity_HH[skepisodeEndDateKey], DimDates[DateKey] ) 
+    )
+RETURN
+        CALCULATE (
+            DIVIDE (
+                [Visits in Episodes],
+                ( __EpisodesEnding )
+            ),
+            FactTaskProductivity_HH[Service Job Code] = "AIDE"
+        )
+
+VPE - AIDE epi = 
+VAR __CurrentJobCode = "AIDE"
+VAR __EpisodesEnding =
+    CALCULATE (
+        [Episodes Ending],
+        FactTaskProductivity_HH[Service Job Code] = __CurrentJobCode ,
+        USERELATIONSHIP ( FactTaskProductivity_HH[skepisodeEndDateKey], DimDates[DateKey] ))
+        return __EpisodesEnding
+
+
+Dynamic LUPA Chart Title = 
+VAR SelectedType = SELECTEDVALUE('LUPA Selector'[LUPA Type], "Actual")
+RETURN
+SWITCH(
+    SelectedType,
+    "Actual", "Patients at Actual LUPA Risk and Days to End of Period",
+    "Potential", "Patients at Potential LUPA Risk and Days to End of Period",
+    "Visits Needed"
+)
+
+
+Ttl Visits Needed (Actual vs Potential) = 
+VAR SelectedType = SELECTEDVALUE('LUPA Selector'[LUPA Type], "Actual")
+RETURN
+SUMX(
+    ADDCOLUMNS(
+        --table of unique combos (bpKey)
+        SUMMARIZE(
+            dimBillingPeriod_HH,
+            dimBillingPeriod_HH[Episode ID],
+            dimBillingPeriod_HH[BillingPeriodSequence]
+        ),
+        "@Threshold", [LUPAThreshold],
+        "@Completed", [Ttl Completed_Open],
+        "@Scheduled", [Ttl Scheduled],
+        "@Requested", [Ttl Requests],
+        "@NeededActual", [LUPAThreshold] - [Ttl Completed_Open],
+        "@NeededPotential", [LUPAThreshold] - ([Ttl Completed_Open] + [Ttl Scheduled] + [Ttl Requests] + [Ttl Missed]),
+        "@Result",
+            SWITCH(
+                SelectedType,
+                "Actual",    IF([LUPAThreshold] - [Ttl Completed_Open] > 0, [LUPAThreshold] - [Ttl Completed_Open], BLANK()),
+                "Potential", IF([LUPAThreshold] - ([Ttl Completed_Open] + [Ttl Scheduled] + [Ttl Requests] ) > 0,
+                                [LUPAThreshold] - ([Ttl Completed_Open] + [Ttl Scheduled] + [Ttl Requests] ),
+                                BLANK()),
+                BLANK()
+            )
+    ),--switch logic is applied
+    [@Result]
+)
+
+
+Visits in Episodes Incl Requests = 
+VAR TotalRequested =
+    SUM( Requests[Requested] )
+RETURN
+CALCULATE (
+    SUM ( FactTaskProductivity_HH[InHomeVisits_VisitNumber] ),
+    FactTaskProductivity_HH[OpenClosedFlag] = "Open",
+    FactTaskProductivity_HH[VisitBetweenSOEandEOE] = 1,
+    FILTER (
+        FactTaskProductivity_HH,
+        NOT (
+            FactTaskProductivity_HH[Visit Status]
+                IN {
+                    "OFFICE REASSIGNED",
+                    "RESCHEDULED",
+                    "MISSED",
+                    "NON-ADMIT",
+                    "DECLINED"
+                }
+        )
+    ),
+    USERELATIONSHIP (
+        FactTaskProductivity_HH[skepisodeStartDateKey],
+        DimDates[DateKey]
+    )
+)
+    + TotalRequested
+
+
+Visits in Episodes_Open Completed + Request = 
+VAR __CurrentJobCode =
+    MAX ( FactTaskProductivity_HH[Service Job Code] )
+
+VAR __VisitsCompleted =
+    CALCULATE(
+        SUM(FactTaskProductivity_HH[InHomeVisits_VisitNumber]),
+        FactTaskProductivity_HH[Visit Status] = "COMPLETED",
+        FactTaskProductivity_HH[OpenClosedFlag] = "Open",
+        FactTaskProductivity_HH[VisitBetweenSOEandEOE] = 1,
+        USERELATIONSHIP(
+            FactTaskProductivity_HH[skepisodeStartDateKey],
+            DimDates[DateKey]
+        )
+    )
+
+VAR __Requested =
+    CALCULATE(
+        [Requested],
+        Requests[JdCode] = __CurrentJobCode
+    )
+
+RETURN
+    __VisitsCompleted + __Requested
+
+
+VPE - AIDE_Open Exclusion = 
+VAR __CurrentJobCode = "AIDE"
+
+
+VAR __Visits =
+    CALCULATE(
+        [Visits in Episodes_Open Exclusion],
+        FactTaskProductivity_HH[Service Job Code] = __CurrentJobCode
+    )
+
+
+VAR __Requested =
+    CALCULATE(
+        [Requested],
+        Requests[JdCode] = __CurrentJobCode
+    )
+
+
+VAR __EpisodesStarting =
+    CALCULATE(
+        [Episodes Starting_Open],
+        FactTaskProductivity_HH[Service Job Code] = __CurrentJobCode,
+        USERELATIONSHIP(
+            FactTaskProductivity_HH[skepisodeStartDateKey],
+            DimDates[DateKey]
+        )
+    )
+
+RETURN
+DIVIDE(
+    __Visits + __Requested,
+    __EpisodesStarting
+)
+
+

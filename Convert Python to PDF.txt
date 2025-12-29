@@ -1,0 +1,55 @@
+Instructions:
+Install the fpdf library if you haven’t:
+
+bash
+Copy
+Edit
+pip install fpdf
+Then run this Python script:
+
+python
+Copy
+Edit
+from fpdf import FPDF
+
+class PDF(FPDF):
+    def header(self):
+        self.set_font('Arial', 'B', 12)
+        self.cell(0, 10, 'Home Health Care Metrics', ln=True, align='C')
+
+    def chapter_title(self, title):
+        self.set_font('Arial', 'B', 11)
+        self.cell(0, 10, title, ln=True)
+        self.ln(1)
+
+    def chapter_body(self, body):
+        self.set_font('Arial', '', 10)
+        self.multi_cell(0, 5, body)
+        self.ln()
+
+pdf = PDF()
+pdf.add_page()
+
+metrics = [
+    ("Hospital Readmission Rate", "Definition: The percentage of patients readmitted to a hospital within 30 days of discharge from a home health care episode.\nNumerator: Number of patients readmitted within 30 days.\nDenominator: Total discharged patients.\nFormula: (Readmitted / Total Discharged) × 100"),
+    ("Emergency Room (ER) Visit Rate", "Definition: Proportion of patients who visited the ER while under care.\nNumerator: ER visits during care.\nDenominator: Total patients.\nFormula: (ER Visits / Total Patients) × 100"),
+    ("Fall Rate", "Definition: Rate of patient falls under care.\nNumerator: Number of falls.\nDenominator: Total episodes.\nFormula: (Falls / Episodes) × 100"),
+    ("Wound Healing Rate", "Definition: % of wounds healed or improved.\nNumerator: Healed wounds.\nDenominator: Total wounds treated.\nFormula: (Healed / Treated) × 100"),
+    ("Improvement in Functional Status", "Definition: % of patients with functional improvement.\nNumerator: Improved patients.\nDenominator: Patients assessed.\nFormula: (Improved / Assessed) × 100"),
+    ("Start of Care (SOC) Timeliness", "Definition: % of patients starting care within 48 hours.\nNumerator: Timely SOC patients.\nDenominator: New admissions.\nFormula: (Timely / New Admissions) × 100"),
+    ("Average Length of Stay (LOS)", "Definition: Avg days of care per patient.\nNumerator: Total care days.\nDenominator: Total discharges.\nFormula: Care Days / Discharges"),
+    ("Visit Frequency per Episode", "Definition: Avg visits per episode.\nNumerator: Total visits.\nDenominator: Total episodes.\nFormula: Visits / Episodes"),
+    ("Overall HHCAHPS Satisfaction Score", "Definition: % rating 9 or 10.\nNumerator: Patients rating 9/10.\nDenominator: Respondents.\nFormula: (Rating 9-10 / Respondents) × 100"),
+    ("Patient Complaint Rate", "Definition: % of episodes with complaints.\nNumerator: Episodes with complaints.\nDenominator: Total episodes.\nFormula: (Complaints / Episodes) × 100"),
+    ("OASIS Submission Timeliness", "Definition: % of OASIS submitted on time.\nNumerator: Timely submissions.\nDenominator: OASIS due.\nFormula: (Timely / Due) × 100"),
+    ("Plan of Care (POC) Adherence", "Definition: % of visits as ordered.\nNumerator: Visits made as ordered.\nDenominator: Visits ordered.\nFormula: (Made / Ordered) × 100"),
+    ("LUPA Rate", "Definition: % of low-utilization episodes.\nNumerator: LUPA episodes.\nDenominator: Total episodes.\nFormula: (LUPA / Total) × 100"),
+    ("Claim Denial Rate", "Definition: % of claims denied.\nNumerator: Denied claims.\nDenominator: Submitted claims.\nFormula: (Denied / Submitted) × 100"),
+    ("Days in Accounts Receivable", "Definition: Avg days to collect payment.\nNumerator: Total AR.\nDenominator: Avg daily revenue.\nFormula: AR / Daily Revenue")
+]
+
+for title, body in metrics:
+    pdf.chapter_title(title)
+    pdf.chapter_body(body)
+
+pdf.output("Home_Health_Care_Metrics.pdf")

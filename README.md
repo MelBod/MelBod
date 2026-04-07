@@ -24,6 +24,18 @@ I have over 15 years of experience in analytics, data visualization, and busines
 
 ## 📁 Projects
 - Power BI dashboards (see repositories below)
+### 🏥 Annual Wellness Visits Dashboard
+![Annual Wellness Visits](Annual Wellness Visits.png)
+
+#### 👥 Client Acuity Population Profile
+![Client Acuity](Client Acuity Population Profile.png)
+
+#### 📍 Client Acuity by Location
+![Client Acuity Location](Client Acuity by Location.png)
+
+#### 📊 Annual Wellness Visits (About)
+![AWV About](Annual Wellness Visits - About.png)
+
 - SQL validation scripts
 - Data modeling examples
 

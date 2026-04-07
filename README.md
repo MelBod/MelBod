@@ -30,4 +30,4 @@ I have over 15 years of experience in analytics, data visualization, and busines
 ---
 
 ## 🔗 Connect with Me
-- LinkedIn: [ADD YOUR LINK HERE]
+- LinkedIn: [Melanie Bodner](https://www.linkedin.com/in/melaniebodner/)

@@ -23,20 +23,37 @@ I have over 15 years of experience in analytics, data visualization, and busines
 ---
 
 ## 📁 Projects
-- Power BI dashboards (see repositories below)
+
 ### 🏥 Annual Wellness Visits Dashboard
 ![Annual Wellness Visits](Annual Wellness Visits.png)
 
-#### 👥 Client Acuity Population Profile
-![Client Acuity](Client Acuity Population Profile.png)
+![Annual Wellness Visits About](Annual Wellness Visits - About.png)
 
-#### 📍 Operational Management Metrics
-![Operational Management Metrics](Operational Management Metrics - Closed.png)
+---
 
-#### 📊 Regional Sales - Win Loss
+### 👥 Client Acuity Dashboard
+![Client Acuity Population](Client Acuity Population Profile.png)
+
+![Client Acuity Location](Client Acuity by Location.png)
+
+![Client Acuity About](Client Acuity About.png)
+
+---
+
+### 📊 Operational Management Metrics
+![Closed Metrics](Operational Management Metrics - Closed.png)
+
+![Ghost LUPA](Operational Management Metrics - Ghost-LUPA.png)
+
+---
+
+### 📈 Regional Sales Dashboard
 ![Regional Sales](Regional Sales - Win Loss.png)
 
-- SQL validation scripts
+---
+
+### 🧪 SQL & Data Work
+- SQL validation scripts  
 - Data modeling examples
 
 ---
